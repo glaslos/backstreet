@@ -2,8 +2,6 @@ package analysis
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +19,8 @@ import (
 	"github.com/glaslos/backstreet/internal/blob"
 	"github.com/glaslos/backstreet/internal/store"
 	"github.com/glaslos/backstreet/internal/worker"
+
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -89,7 +89,7 @@ func (s *Service) Submit(ctx context.Context, filename, idempotencyKey string, o
 		return nil, fmt.Errorf("%w: empty sample", ErrInvalid)
 	}
 	a := &analysisv1.Analysis{
-		Id:           newID(),
+		Id:           uuid.NewString(),
 		State:        analysisv1.AnalysisState_ANALYSIS_STATE_QUEUED,
 		Filename:     filepath.Base(filename),
 		SampleSha256: hash,
@@ -174,13 +174,19 @@ func (s *Service) Artifact(ctx context.Context, analysisID, artifactID string) (
 	return a, file, err
 }
 
-func (s *Service) WorkerReady(ctx context.Context) bool { return s.worker.Ready(ctx) }
+func (s *Service) WorkerReady(ctx context.Context) bool {
+	return s.worker.Ready(ctx)
+}
 
 func (s *Service) Metrics(ctx context.Context) Metrics {
 	queued, _ := s.store.QueueDepth(ctx)
 	return Metrics{
-		Submitted: s.submitted.Load(), Running: s.running.Load(), Succeeded: s.succeeded.Load(),
-		Failed: s.failed.Load(), Cancelled: s.cancelled.Load(), Queued: queued,
+		Submitted: s.submitted.Load(),
+		Running:   s.running.Load(),
+		Succeeded: s.succeeded.Load(),
+		Failed:    s.failed.Load(),
+		Cancelled: s.cancelled.Load(),
+		Queued:    queued,
 	}
 }
 
@@ -275,7 +281,10 @@ func (s *Service) execute(parent context.Context, job *analysisv1.Analysis) {
 		return
 	}
 	response, err := s.worker.Analyze(ctx, worker.Request{
-		JobID: job.Id, SamplePath: s.blobs.Path(job.SampleSha256), OutputDir: outputDir, Options: job.Options,
+		JobID:      job.Id,
+		SamplePath: s.blobs.Path(job.SampleSha256),
+		OutputDir:  outputDir,
+		Options:    job.Options,
 	})
 	if err != nil {
 		state, code := analysisv1.AnalysisState_ANALYSIS_STATE_FAILED, "worker_error"
@@ -310,8 +319,13 @@ func (s *Service) execute(parent context.Context, job *analysisv1.Analysis) {
 		return
 	}
 	_ = s.store.AddArtifact(parent, store.Artifact{
-		ID: newID(), AnalysisID: job.Id, Kind: "report", Name: "report.json",
-		SHA256: reportHash, Size: reportSize, ContentType: "application/json",
+		ID:          uuid.NewString(),
+		AnalysisID:  job.Id,
+		Kind:        "report",
+		Name:        "report.json",
+		SHA256:      reportHash,
+		Size:        reportSize,
+		ContentType: "application/json",
 	})
 	for _, item := range response.Artifacts {
 		hash, size, copyErr := putFile(s.blobs, item.Path, s.maxUpload)
@@ -327,8 +341,13 @@ func (s *Service) execute(parent context.Context, job *analysisv1.Analysis) {
 			contentType = "application/octet-stream"
 		}
 		_ = s.store.AddArtifact(parent, store.Artifact{
-			ID: newID(), AnalysisID: job.Id, Kind: item.Kind, Name: filepath.Base(item.Name),
-			SHA256: hash, Size: size, ContentType: contentType,
+			ID:          uuid.NewString(),
+			AnalysisID:  job.Id,
+			Kind:        item.Kind,
+			Name:        filepath.Base(item.Name),
+			SHA256:      hash,
+			Size:        size,
+			ContentType: contentType,
 		})
 	}
 	s.succeeded.Add(1)
@@ -390,15 +409,4 @@ func putFile(blobs *blob.Store, path string, max int64) (string, int64, error) {
 	}
 	defer file.Close()
 	return blobs.Put(file, max)
-}
-
-func newID() string {
-	var data [16]byte
-	if _, err := rand.Read(data[:]); err != nil {
-		panic(err)
-	}
-	data[6] = (data[6] & 0x0f) | 0x40
-	data[8] = (data[8] & 0x3f) | 0x80
-	value := hex.EncodeToString(data[:])
-	return value[:8] + "-" + value[8:12] + "-" + value[12:16] + "-" + value[16:20] + "-" + value[20:]
 }

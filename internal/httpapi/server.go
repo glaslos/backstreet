@@ -14,6 +14,7 @@ import (
 	analysisv1 "github.com/glaslos/backstreet/gen/go/v1"
 	"github.com/glaslos/backstreet/internal/analysis"
 	"github.com/glaslos/backstreet/internal/store"
+
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -114,8 +115,13 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
 	response := &analysisv1.ListArtifactsResponse{}
 	for _, item := range items {
 		response.Artifacts = append(response.Artifacts, &analysisv1.Artifact{
-			Id: item.ID, AnalysisId: item.AnalysisID, Kind: item.Kind, Name: item.Name,
-			Sha256: item.SHA256, Size: uint64(item.Size), ContentType: item.ContentType,
+			Id:          item.ID,
+			AnalysisId:  item.AnalysisID,
+			Kind:        item.Kind,
+			Name:        item.Name,
+			Sha256:      item.SHA256,
+			Size:        uint64(item.Size),
+			ContentType: item.ContentType,
 		})
 	}
 	writeProto(w, http.StatusOK, response)

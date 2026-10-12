@@ -21,6 +21,7 @@ import (
 	"github.com/glaslos/backstreet/internal/mcpapi"
 	"github.com/glaslos/backstreet/internal/store"
 	"github.com/glaslos/backstreet/internal/worker"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
