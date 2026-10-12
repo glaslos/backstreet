@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	analysisv1 "github.com/glaslos/backstreet/gen/go/v1"
 	"github.com/glaslos/backstreet/internal/blob"
+	"github.com/glaslos/backstreet/internal/metrics"
 	"github.com/glaslos/backstreet/internal/store"
 	"github.com/glaslos/backstreet/internal/worker"
 
@@ -42,20 +42,6 @@ type Service struct {
 	wake       chan struct{}
 	cancelMu   sync.Mutex
 	cancelJobs map[string]context.CancelFunc
-	submitted  atomic.Uint64
-	running    atomic.Int64
-	succeeded  atomic.Uint64
-	failed     atomic.Uint64
-	cancelled  atomic.Uint64
-}
-
-type Metrics struct {
-	Submitted uint64
-	Running   int64
-	Succeeded uint64
-	Failed    uint64
-	Cancelled uint64
-	Queued    int
 }
 
 func NewService(db *store.Store, blobs *blob.Store, workerClient *worker.Client, dataDir string, maxUpload int64, maxQueue int) *Service {
@@ -99,7 +85,7 @@ func (s *Service) Submit(ctx context.Context, filename, idempotencyKey string, o
 	}
 	a, err = s.store.Create(ctx, a, idempotencyKey)
 	if err == nil {
-		s.submitted.Add(1)
+		metrics.AnalysesSubmitted.Inc()
 		s.signal()
 	}
 	return a, err
@@ -127,7 +113,7 @@ func (s *Service) Cancel(ctx context.Context, id string) (*analysisv1.Analysis, 
 	result, err := s.store.Cancel(ctx, id)
 	if err == nil && before.State != analysisv1.AnalysisState_ANALYSIS_STATE_CANCELLED &&
 		result.State == analysisv1.AnalysisState_ANALYSIS_STATE_CANCELLED {
-		s.cancelled.Add(1)
+		metrics.AnalysesCancelled.Inc()
 	}
 	return result, err
 }
@@ -176,18 +162,6 @@ func (s *Service) Artifact(ctx context.Context, analysisID, artifactID string) (
 
 func (s *Service) WorkerReady(ctx context.Context) bool {
 	return s.worker.Ready(ctx)
-}
-
-func (s *Service) Metrics(ctx context.Context) Metrics {
-	queued, _ := s.store.QueueDepth(ctx)
-	return Metrics{
-		Submitted: s.submitted.Load(),
-		Running:   s.running.Load(),
-		Succeeded: s.succeeded.Load(),
-		Failed:    s.failed.Load(),
-		Cancelled: s.cancelled.Load(),
-		Queued:    queued,
-	}
 }
 
 func (s *Service) Retain(ctx context.Context, retention time.Duration) {
@@ -259,8 +233,8 @@ func (s *Service) runWorker(ctx context.Context) {
 }
 
 func (s *Service) execute(parent context.Context, job *analysisv1.Analysis) {
-	s.running.Add(1)
-	defer s.running.Add(-1)
+	metrics.AnalysesRunning.Inc()
+	defer metrics.AnalysesRunning.Dec()
 	timeout := time.Duration(job.Options.TimeoutSeconds+10) * time.Second
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	s.cancelMu.Lock()
@@ -276,7 +250,7 @@ func (s *Service) execute(parent context.Context, job *analysisv1.Analysis) {
 	outputDir := filepath.Join(s.dataDir, "jobs", job.Id)
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		if s.store.Finish(parent, job.Id, analysisv1.AnalysisState_ANALYSIS_STATE_FAILED, "", "storage_error", err.Error()) == nil {
-			s.failed.Add(1)
+			metrics.AnalysesFailed.Inc()
 		}
 		return
 	}
@@ -295,23 +269,23 @@ func (s *Service) execute(parent context.Context, job *analysisv1.Analysis) {
 		}
 		if s.store.Finish(parent, job.Id, state, "", code, err.Error()) == nil {
 			if state == analysisv1.AnalysisState_ANALYSIS_STATE_CANCELLED {
-				s.cancelled.Add(1)
+				metrics.AnalysesCancelled.Inc()
 			} else {
-				s.failed.Add(1)
+				metrics.AnalysesFailed.Inc()
 			}
 		}
 		return
 	}
 	if !response.OK {
 		if s.store.Finish(parent, job.Id, analysisv1.AnalysisState_ANALYSIS_STATE_FAILED, "", response.ErrorCode, response.ErrorMessage) == nil {
-			s.failed.Add(1)
+			metrics.AnalysesFailed.Inc()
 		}
 		return
 	}
 	reportHash, reportSize, err := putFile(s.blobs, response.ReportPath, 128<<20)
 	if err != nil {
 		if s.store.Finish(parent, job.Id, analysisv1.AnalysisState_ANALYSIS_STATE_FAILED, "", "report_error", err.Error()) == nil {
-			s.failed.Add(1)
+			metrics.AnalysesFailed.Inc()
 		}
 		return
 	}
@@ -350,7 +324,7 @@ func (s *Service) execute(parent context.Context, job *analysisv1.Analysis) {
 			ContentType: contentType,
 		})
 	}
-	s.succeeded.Add(1)
+	metrics.AnalysesSucceeded.Inc()
 	_ = os.RemoveAll(outputDir)
 }
 

@@ -20,8 +20,12 @@ import (
 	"github.com/glaslos/backstreet/internal/grpcapi"
 	"github.com/glaslos/backstreet/internal/httpapi"
 	"github.com/glaslos/backstreet/internal/mcpapi"
+	"github.com/glaslos/backstreet/internal/metrics"
 	"github.com/glaslos/backstreet/internal/store"
 	"github.com/glaslos/backstreet/internal/worker"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 )
 
@@ -62,16 +66,18 @@ func run() error {
 		return err
 	}
 	service := analysis.NewService(db, blobs, worker.New(cfg.WorkerSocket), cfg.DataDir, cfg.MaxUploadBytes, cfg.MaxQueueDepth)
+	metrics.RegisterQueueDepth(db.QueueDepth)
 	httpAPI := httpapi.New(service, cfg.MaxUploadBytes)
 	mcpAPI := mcpapi.New(service, cfg.MaxUploadBytes)
 
-	root := http.NewServeMux()
-	root.HandleFunc("GET /healthz", httpAPI.Health)
-	root.HandleFunc("GET /metrics", httpAPI.Metrics)
-	root.Handle("/v1/", authenticator.HTTP(httpAPI.Routes()))
+	root := chi.NewRouter()
+	root.Use(requestLog)
+	root.Get("/healthz", httpAPI.Health)
+	root.Method(http.MethodGet, "/metrics", promhttp.Handler())
+	root.Handle("/v1/*", authenticator.HTTP(httpAPI.Routes()))
 	root.Handle("/mcp", authenticator.HTTP(mcpAPI.Handler()))
 	httpServer := &http.Server{
-		Addr: cfg.HTTPAddr, Handler: requestLog(root), ReadHeaderTimeout: 5 * time.Second,
+		Addr: cfg.HTTPAddr, Handler: root, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Minute, WriteTimeout: 15 * time.Minute, IdleTimeout: 60 * time.Second,
 	}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"github.com/glaslos/backstreet/internal/analysis"
 	"github.com/glaslos/backstreet/internal/store"
 
+	"github.com/go-chi/chi/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -29,15 +29,15 @@ func New(service *analysis.Service, maxUpload int64) *Server {
 }
 
 func (s *Server) Routes() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/analyses", s.submit)
-	mux.HandleFunc("GET /v1/analyses", s.list)
-	mux.HandleFunc("GET /v1/analyses/{id}", s.get)
-	mux.HandleFunc("POST /v1/analyses/{id}/cancel", s.cancel)
-	mux.HandleFunc("GET /v1/analyses/{id}/report", s.report)
-	mux.HandleFunc("GET /v1/analyses/{id}/artifacts", s.artifacts)
-	mux.HandleFunc("GET /v1/analyses/{id}/artifacts/{artifact}", s.downloadArtifact)
-	return mux
+	r := chi.NewRouter()
+	r.Post("/v1/analyses", s.submit)
+	r.Get("/v1/analyses", s.list)
+	r.Get("/v1/analyses/{id}", s.get)
+	r.Post("/v1/analyses/{id}/cancel", s.cancel)
+	r.Get("/v1/analyses/{id}/report", s.report)
+	r.Get("/v1/analyses/{id}/artifacts", s.artifacts)
+	r.Get("/v1/analyses/{id}/artifacts/{artifact}", s.downloadArtifact)
+	return r
 }
 
 func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
-	result, err := s.service.Get(r.Context(), r.PathValue("id"))
+	result, err := s.service.Get(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, err)
 		return
@@ -89,7 +89,7 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
-	result, err := s.service.Cancel(r.Context(), r.PathValue("id"))
+	result, err := s.service.Cancel(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, err)
 		return
@@ -98,7 +98,7 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) report(w http.ResponseWriter, r *http.Request) {
-	result, err := s.service.Report(r.Context(), r.PathValue("id"))
+	result, err := s.service.Report(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, err)
 		return
@@ -107,7 +107,7 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
-	items, err := s.service.Artifacts(r.Context(), r.PathValue("id"))
+	items, err := s.service.Artifacts(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, err)
 		return
@@ -128,7 +128,7 @@ func (s *Server) artifacts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) downloadArtifact(w http.ResponseWriter, r *http.Request) {
-	item, reader, err := s.service.Artifact(r.Context(), r.PathValue("id"), r.PathValue("artifact"))
+	item, reader, err := s.service.Artifact(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "artifact"))
 	if err != nil {
 		writeError(w, err)
 		return
@@ -152,24 +152,6 @@ func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "worker_ready": ready})
-}
-
-func (s *Server) Metrics(w http.ResponseWriter, r *http.Request) {
-	metrics := s.service.Metrics(r.Context())
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-	_, _ = fmt.Fprintf(w, `# TYPE backstreet_analyses_submitted_total counter
-backstreet_analyses_submitted_total %d
-# TYPE backstreet_analyses_running gauge
-backstreet_analyses_running %d
-# TYPE backstreet_analyses_queued gauge
-backstreet_analyses_queued %d
-# TYPE backstreet_analyses_succeeded_total counter
-backstreet_analyses_succeeded_total %d
-# TYPE backstreet_analyses_failed_total counter
-backstreet_analyses_failed_total %d
-# TYPE backstreet_analyses_cancelled_total counter
-backstreet_analyses_cancelled_total %d
-`, metrics.Submitted, metrics.Running, metrics.Queued, metrics.Succeeded, metrics.Failed, metrics.Cancelled)
 }
 
 func contextWithTimeout(r *http.Request, timeout time.Duration) (context.Context, context.CancelFunc) {

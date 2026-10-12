@@ -64,7 +64,7 @@ The canonical contract is [`api/proto/v1/analysis.proto`](api/proto/v1/analysis.
 | `GET` | `/v1/analyses/{id}/artifacts` | List report and dropped-file artifacts |
 | `GET` | `/v1/analyses/{id}/artifacts/{artifact}` | Download an artifact |
 
-`/healthz` and Prometheus-format `/metrics` do not require an API key. All analysis endpoints do.
+`/healthz` and Prometheus `/metrics` do not require an API key. All analysis endpoints do.
 
 ### gRPC
 
@@ -128,15 +128,13 @@ removes expired terminal jobs and unreferenced blobs.
 ## Security model
 
 - API keys are compared by their SHA-256 digests using constant-time comparison and are never
-  logged.
+  logged. Failed authentication is rate-limited per client address, and API keys longer than
+  256 bytes are rejected before hashing.
 - The worker runs as non-root with no network, a read-only root filesystem, dropped Linux
   capabilities, `no-new-privileges`, bounded PIDs/CPU/memory, and tmpfs scratch space.
 - Samples and artifacts remain in the shared data volume and are addressed by SHA-256.
 - Filenames, sizes, option cardinality, report sizes, and artifact sizes are bounded.
 - The worker validates that every requested path remains below `/data`.
-
-For stronger isolation, place the worker behind a VM or microVM boundary and store the data volume
-on encrypted storage.
 
 ## Development
 
@@ -156,7 +154,3 @@ uv run pytest
 uv run ruff check worker
 uv run mypy worker
 ```
-
-Python dependencies are managed with [uv](https://docs.astral.sh/uv/) via
-[`pyproject.toml`](pyproject.toml) and [`uv.lock`](uv.lock). Review Speakeasy
-report/config changes before upgrading it.

@@ -10,6 +10,7 @@ import (
 	analysisv1 "github.com/glaslos/backstreet/gen/go/v1"
 	"github.com/glaslos/backstreet/internal/analysis"
 	"github.com/glaslos/backstreet/internal/store"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
