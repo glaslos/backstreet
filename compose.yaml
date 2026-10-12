@@ -33,7 +33,8 @@ services:
 
   worker:
     build:
-      context: worker
+      context: .
+      dockerfile: worker/Dockerfile
     environment:
       BACKSTREET_DATA_DIR: /data
       BACKSTREET_WORKER_SOCKET: /run/backstreet/worker.sock

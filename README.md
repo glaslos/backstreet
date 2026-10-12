@@ -143,10 +143,12 @@ Run checks:
 ```bash
 go test -race ./...
 go vet ./...
-python -m pytest
-ruff check worker
-mypy worker
+uv sync --frozen --all-groups
+uv run pytest
+uv run ruff check worker
+uv run mypy worker
 ```
 
-The Python dependency is pinned in [`worker/requirements.txt`](worker/requirements.txt). Review
-Speakeasy report/config changes before upgrading it.
+Python dependencies are managed with [uv](https://docs.astral.sh/uv/) via
+[`pyproject.toml`](pyproject.toml) and [`uv.lock`](uv.lock). Review Speakeasy
+report/config changes before upgrading it.
