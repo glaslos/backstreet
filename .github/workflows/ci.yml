@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  protobuf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: bufbuild/buf-setup-action@v1
+      - run: buf lint
+      - run: buf generate
+      - run: git diff --exit-code
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: worker/requirements.txt
+      - run: pip install -r worker/requirements.txt pytest ruff mypy pip-audit
+      - run: ruff check worker
+      - run: mypy worker
+      - run: pytest
+      - run: pip-audit -r worker/requirements.txt
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build -t backstreet-api .
+      - run: docker build -t backstreet-worker worker
+      - uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: local://backstreet-api
+          only-severities: critical,high
+          exit-code: true
+      - uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: local://backstreet-worker
+          only-severities: critical,high
+          exit-code: true

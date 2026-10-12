@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package backstreet.api.v1;
+
+option go_package = "github.com/glaslos/backstreet/gen/go/backstreet/api/v1;analysisv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service AnalysisService {
+  rpc SubmitAnalysis(stream SubmitAnalysisRequest) returns (Analysis);
+  rpc GetAnalysis(GetAnalysisRequest) returns (Analysis);
+  rpc ListAnalyses(ListAnalysesRequest) returns (ListAnalysesResponse);
+  rpc CancelAnalysis(CancelAnalysisRequest) returns (Analysis);
+  rpc GetReport(GetReportRequest) returns (Report);
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+  rpc DownloadArtifact(DownloadArtifactRequest) returns (stream ArtifactChunk);
+  rpc Health(google.protobuf.Empty) returns (HealthResponse);
+}
+
+enum AnalysisState {
+  ANALYSIS_STATE_UNSPECIFIED = 0;
+  ANALYSIS_STATE_QUEUED = 1;
+  ANALYSIS_STATE_RUNNING = 2;
+  ANALYSIS_STATE_SUCCEEDED = 3;
+  ANALYSIS_STATE_FAILED = 4;
+  ANALYSIS_STATE_CANCELLED = 5;
+}
+
+enum SampleKind {
+  SAMPLE_KIND_UNSPECIFIED = 0;
+  SAMPLE_KIND_PE = 1;
+  SAMPLE_KIND_SHELLCODE = 2;
+}
+
+enum Architecture {
+  ARCHITECTURE_UNSPECIFIED = 0;
+  ARCHITECTURE_X86 = 1;
+  ARCHITECTURE_X64 = 2;
+}
+
+message AnalysisOptions {
+  SampleKind kind = 1;
+  Architecture architecture = 2;
+  uint32 timeout_seconds = 3;
+  uint64 max_instructions = 4;
+  uint32 max_api_count = 5;
+  bool all_entrypoints = 6;
+  bool strings = 7;
+  bool coverage = 8;
+  bool memory_tracing = 9;
+  bool snapshot_memory_regions = 10;
+  repeated string argv = 11;
+  map<string, string> environment = 12;
+  map<string, string> dns_names = 13;
+}
+
+message SubmitMetadata {
+  string filename = 1;
+  string idempotency_key = 2;
+  AnalysisOptions options = 3;
+}
+
+message SubmitAnalysisRequest {
+  oneof payload {
+    SubmitMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message Analysis {
+  string id = 1;
+  AnalysisState state = 2;
+  string filename = 3;
+  string sample_sha256 = 4;
+  uint64 sample_size = 5;
+  AnalysisOptions options = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp finished_at = 9;
+  string error_code = 10;
+  string error_message = 11;
+}
+
+message GetAnalysisRequest {
+  string id = 1;
+}
+
+message ListAnalysesRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListAnalysesResponse {
+  repeated Analysis analyses = 1;
+  string next_page_token = 2;
+}
+
+message CancelAnalysisRequest {
+  string id = 1;
+}
+
+message GetReportRequest {
+  string id = 1;
+}
+
+message Report {
+  string analysis_id = 1;
+  string report_version = 2;
+  google.protobuf.Struct document = 3;
+}
+
+message Artifact {
+  string id = 1;
+  string analysis_id = 2;
+  string kind = 3;
+  string name = 4;
+  string sha256 = 5;
+  uint64 size = 6;
+  string content_type = 7;
+}
+
+message ListArtifactsRequest {
+  string analysis_id = 1;
+}
+
+message ListArtifactsResponse {
+  repeated Artifact artifacts = 1;
+}
+
+message DownloadArtifactRequest {
+  string analysis_id = 1;
+  string artifact_id = 2;
+}
+
+message ArtifactChunk {
+  bytes data = 1;
+}
+
+message HealthResponse {
+  string status = 1;
+  bool worker_ready = 2;
+}

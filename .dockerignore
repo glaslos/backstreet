@@ -1,0 +1,10 @@
+.git
+.github
+.cursor
+.env
+data
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+coverage.*
+*.test

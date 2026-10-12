@@ -1,0 +1,59 @@
+services:
+  api:
+    build:
+      context: .
+    environment:
+      BACKSTREET_API_KEY_HASHES: ${BACKSTREET_API_KEY_HASHES:?set a SHA-256 API-key hash}
+      BACKSTREET_DATA_DIR: /data
+      BACKSTREET_WORKER_SOCKET: /run/backstreet/worker.sock
+      BACKSTREET_MAX_CONCURRENT: ${BACKSTREET_MAX_CONCURRENT:-2}
+      BACKSTREET_RETENTION_HOURS: ${BACKSTREET_RETENTION_HOURS:-168}
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - data:/data
+      - worker-socket:/run/backstreet
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 2
+    healthcheck:
+      test: [CMD, /backstreet, healthcheck]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      worker:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: worker
+    environment:
+      BACKSTREET_DATA_DIR: /data
+      BACKSTREET_WORKER_SOCKET: /run/backstreet/worker.sock
+      BACKSTREET_WORKER_CONCURRENCY: ${BACKSTREET_MAX_CONCURRENT:-2}
+      BACKSTREET_MAX_ARTIFACT_BYTES: ${BACKSTREET_MAX_ARTIFACT_BYTES:-67108864}
+    volumes:
+      - data:/data
+      - worker-socket:/run/backstreet
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=65532,gid=65532
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 2g
+    cpus: 2
+    restart: unless-stopped
+
+volumes:
+  data:
+  worker-socket:
