@@ -18,6 +18,14 @@ export BACKSTREET_API_KEY_HASHES="$(printf %s "$BACKSTREET_API_KEY" | sha256sum 
 docker compose up --build
 ```
 
+Fish:
+
+```fish
+set -x BACKSTREET_API_KEY 'replace-with-a-long-random-value'
+set -x BACKSTREET_API_KEY_HASHES (printf %s $BACKSTREET_API_KEY | sha256sum | cut -d' ' -f1)
+docker compose up --build
+```
+
 HTTP/MCP listen on `127.0.0.1:8080`; gRPC listens on `127.0.0.1:9090`.
 
 Submit a PE file:
